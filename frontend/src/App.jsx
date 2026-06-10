@@ -4,7 +4,7 @@ import { useState } from "react";
 import Register from "./pages/Register.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
-import ProductDetails from "./pages/ProductDetails";
+import ProductDetails from "./pages/ProductDetails.jsx";
 import Cart from "./pages/CartPage.jsx";
 
 function App() {
