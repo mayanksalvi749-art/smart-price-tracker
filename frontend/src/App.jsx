@@ -4,8 +4,8 @@ import { useState } from "react";
 import Register from "./pages/Register";
 import Login from "./pages/login";
 import Dashboard from "./pages/Dashboard";
-import ProductDetails from "./pages/productdetails";
-import Cart from "./pages/Cart";
+import ProductDetails from "./pages/ProductDetails";
+import Cart from "./pages/CartPage";
 
 function App() {
 
@@ -23,9 +23,9 @@ function App() {
         cart.map((item) =>
           item.id === product.id
             ? {
-                ...item,
-                quantity: item.quantity + 1,
-              }
+              ...item,
+              quantity: item.quantity + 1,
+            }
             : item
         )
       );
@@ -53,9 +53,9 @@ function App() {
       cart.map((item) =>
         item.id === id
           ? {
-              ...item,
-              quantity: item.quantity + 1,
-            }
+            ...item,
+            quantity: item.quantity + 1,
+          }
           : item
       )
     );
@@ -67,12 +67,12 @@ function App() {
       cart.map((item) =>
         item.id === id
           ? {
-              ...item,
-              quantity:
-                item.quantity > 1
-                  ? item.quantity - 1
-                  : 1,
-            }
+            ...item,
+            quantity:
+              item.quantity > 1
+                ? item.quantity - 1
+                : 1,
+          }
           : item
       )
     );
@@ -104,7 +104,7 @@ function App() {
       ...currentUser,
       orders: [...(currentUser.orders || []), order]
     };
-    
+
     localStorage.setItem("currentUser", JSON.stringify(updatedUser));
 
     // Update users list in localStorage
