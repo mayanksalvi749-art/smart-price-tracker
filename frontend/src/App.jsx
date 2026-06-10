@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useState } from "react";
 
-import Register from "./pages/Register";
-import Login from "./pages/login";
-import Dashboard from "./pages/Dashboard";
+import Register from "./pages/Register.jsx";
+import Login from "./pages/Login.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
 import ProductDetails from "./pages/ProductDetails";
-import Cart from "./pages/CartPage";
+import Cart from "./pages/CartPage.jsx";
 
 function App() {
 

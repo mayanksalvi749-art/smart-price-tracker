@@ -1,27 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
 export default function Login() {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const users = JSON.parse(localStorage.getItem("users") || "[]");
-    const defaultEmail = "mayanksalvi749@gmail.com";
-    const userExists = users.some(u => u.email.toLowerCase() === defaultEmail.toLowerCase());
-    
-    if (!userExists) {
-      const defaultUser = {
-        name: "Mayank Salvi",
-        email: defaultEmail,
-        password: "123456",
-        address: "No address set yet. Update below.",
-        token: "spt_tok_" + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11),
-        orders: []
-      };
-      users.push(defaultUser);
-      localStorage.setItem("users", JSON.stringify(users));
-    }
-  }, []);
 
   const [form, setForm] = useState({
     email: "",
@@ -34,7 +15,7 @@ export default function Login() {
       ...form,
       [e.target.name]: e.target.value,
     });
-    setError(""); // Clear error on change
+    setError("");
   };
 
   const handleLogin = (e) => {
@@ -45,21 +26,21 @@ export default function Login() {
       return;
     }
 
-    // Retrieve users list from localStorage
     const users = JSON.parse(localStorage.getItem("users") || "[]");
 
-    // Match credentials
     const matchedUser = users.find(
-      (user) => user.email.toLowerCase() === form.email.toLowerCase() && user.password === form.password
+      (user) =>
+        user.email.toLowerCase() === form.email.toLowerCase() &&
+        user.password === form.password
     );
 
-    if (matchedUser) {
-      // Save matched user session
-      localStorage.setItem("currentUser", JSON.stringify(matchedUser));
-      navigate("/dashboard");
-    } else {
-      setError("Invalid email or password. Please try again.");
+    if (!matchedUser) {
+      setError("Invalid email or password.");
+      return;
     }
+
+    localStorage.setItem("currentUser", JSON.stringify(matchedUser));
+    navigate("/dashboard");
   };
 
   return (
@@ -73,7 +54,7 @@ export default function Login() {
         </h1>
 
         <p className="text-center text-gray-400 mb-6 text-sm">
-          Log in to manage your deals and profile
+          Sign in to your account to track the best deals
         </p>
 
         {error && (
@@ -89,7 +70,7 @@ export default function Login() {
           <input
             type="email"
             name="email"
-            placeholder="e.g. name@example.com"
+            placeholder="e.g. john@example.com"
             value={form.email}
             onChange={handleChange}
             className="w-full bg-slate-900 border border-white/10 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-white placeholder-gray-500"
