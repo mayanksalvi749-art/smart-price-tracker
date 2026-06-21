@@ -33,7 +33,7 @@ export const sendTelegramAlert =
         response.data
       );
 
-      alert(
+      console.log(
         "Telegram Alert Sent 🚀"
       );
 
@@ -56,17 +56,17 @@ export const sendTelegramAlert =
             }
           );
           console.log(fallbackResponse.data);
-          alert("Telegram Alert Sent (Text fallback) 🚀");
+          console.log("Telegram Alert Sent (Text fallback) 🚀");
           return;
         } catch (e) {
           console.log(e.response?.data || e.message);
         }
       }
 
-      alert(
+      console.log(
         "Telegram Error ❌"
       );
 
     }
 
-};
+  };

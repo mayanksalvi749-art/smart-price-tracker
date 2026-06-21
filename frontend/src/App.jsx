@@ -6,22 +6,30 @@ import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import ProductDetails from "./pages/ProductDetails.jsx";
 import Cart from "./pages/CartPage.jsx";
+import PriceComparePage from "./pages/PriceComparePage.jsx";
+import { IMAGE_NOT_AVAILABLE } from "./utils/productImages";
 
 function App() {
 
   const [cart, setCart] = useState([]);
 
   const addToCart = (product) => {
+    const normalized = {
+      ...product,
+      image: product.image || product.primary_image || IMAGE_NOT_AVAILABLE,
+      primary_image: product.primary_image || product.image || IMAGE_NOT_AVAILABLE,
+      fallbackImg: IMAGE_NOT_AVAILABLE,
+    };
 
     const existing = cart.find(
-      (item) => item.id === product.id
+      (item) => item.id === normalized.id
     );
 
     if (existing) {
 
       setCart(
         cart.map((item) =>
-          item.id === product.id
+          item.id === normalized.id
             ? {
               ...item,
               quantity: item.quantity + 1,
@@ -35,7 +43,7 @@ function App() {
       setCart([
         ...cart,
         {
-          ...product,
+          ...normalized,
           quantity: 1,
         },
       ]);
@@ -158,6 +166,12 @@ function App() {
             />
           }
         />
+
+        <Route
+          path="/compare"
+          element={<PriceComparePage />}
+        />
+
 
       </Routes>
 

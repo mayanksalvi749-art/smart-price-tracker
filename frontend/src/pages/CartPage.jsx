@@ -1,6 +1,7 @@
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { FaTrash, FaArrowLeft, FaShoppingCart, FaMapMarkerAlt, FaCheckCircle } from "react-icons/fa";
+import { IMAGE_NOT_AVAILABLE } from "../utils/productImages";
 
 export default function Cart({
   cart,
@@ -10,18 +11,16 @@ export default function Cart({
   checkoutCart,
 }) {
   const navigate = useNavigate();
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const user = localStorage.getItem("currentUser");
+    return user ? JSON.parse(user) : null;
+  });
+  const [shippingAddress, setShippingAddress] = useState(() => {
+    const user = localStorage.getItem("currentUser");
+    return user ? (JSON.parse(user).address || "No address set yet.") : "";
+  });
   const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const [shippingAddress, setShippingAddress] = useState("");
   const [isEditingAddress, setIsEditingAddress] = useState(false);
-
-  useEffect(() => {
-    const user = JSON.parse(localStorage.getItem("currentUser"));
-    if (user) {
-      setCurrentUser(user);
-      setShippingAddress(user.address || "No address set yet.");
-    }
-  }, []);
 
   const totalPrice = cart.reduce((total, item) => {
     const numericPrice = Number(item.price.replace(/[₹,]/g, ""));
@@ -92,16 +91,20 @@ export default function Cart({
             {/* Cart Items List */}
             <div className="lg:col-span-7 space-y-4">
               {cart.map((item) => {
-                const itemPriceNum = Number(item.price.replace(/[₹,]/g, ""));
+                const itemImage = item.image || item.primary_image || IMAGE_NOT_AVAILABLE;
                 return (
                   <div
                     key={item.id}
                     className="bg-white/10 backdrop-blur-md border border-white/5 p-5 rounded-3xl shadow-xl flex gap-5 items-center hover:border-white/10 transition"
                   >
                     <img
-                      src={item.image}
+                      src={itemImage}
                       alt={item.name}
-                      className="h-28 w-28 object-cover rounded-2xl"
+                      loading="lazy"
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => { e.currentTarget.src = IMAGE_NOT_AVAILABLE; }}
+                      className="h-28 w-28 object-contain bg-white rounded-2xl p-1"
                     />
 
                     <div className="flex-1">

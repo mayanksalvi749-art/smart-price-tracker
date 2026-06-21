@@ -1,68 +1,11 @@
-from sqlalchemy import create_engine
-from sqlalchemy import text
-from dotenv import load_dotenv
-import os
+"""
+Legacy entry point — use run_ingest.py or POST /api/ingest/run instead.
 
-load_dotenv()
+  python run_ingest.py
+  uvicorn app:app --reload --port 8000
+"""
 
-engine = create_engine(os.getenv("MYSQL_URL"))
+from run_ingest import main
 
-
-products = [
-
-{
-"name": "iPhone 16",
-"price": "79999",
-"image": "https://picsum.photos/300",
-"source": "Demo"
-},
-
-{
-"name": "Samsung S25",
-"price": "69999",
-"image": "https://picsum.photos/301",
-"source": "Demo"
-}
-
-]
-
-
-try:
-
-    with engine.begin() as conn:
-
-        for item in products:
-
-            conn.execute(
-
-                text("""
-
-                INSERT INTO products
-                (
-                name,
-                price,
-                image,
-                source
-                )
-
-                VALUES
-                (
-                :name,
-                :price,
-                :image,
-                :source
-                )
-
-                """),
-
-                item
-
-            )
-
-    print("Saved To MySQL")
-
-
-except Exception as e:
-
-    print("ERROR:")
-    print(e)
+if __name__ == "__main__":
+    main()

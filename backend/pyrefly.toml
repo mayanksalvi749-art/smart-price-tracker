@@ -1,0 +1,3 @@
+# Pyrefly configuration for the backend
+# Points to the Python interpreter that has all packages installed
+python_interpreter = "C:\\Users\\ASUS\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe"

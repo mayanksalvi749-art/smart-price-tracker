@@ -4,58 +4,37 @@ import { supabase } from "../supabase";
 import {
   resolveProductGallery,
   IMAGE_NOT_AVAILABLE,
-  getProductImageByName,
 } from "../utils/productImages";
 import { triggerIngestion } from "../services/api";
 import { sendTelegramAlert } from "../telegram";
 import {
   FaShoppingCart, FaSearch, FaBell, FaCog, FaHeart, FaFire,
   FaHome, FaUser, FaMapMarkerAlt, FaSignOutAlt, FaSyncAlt,
-  FaTag, FaCamera, FaMicrophone,
+  FaTag, FaPercent, FaRupeeSign, FaMobileAlt, FaLaptop,
+  FaTshirt, FaSprayCan, FaBolt, FaCamera, FaMicrophone,
   FaPhone, FaTimes, FaPaperPlane, FaRobot, FaImage,
-  FaStop, FaVolumeMute, FaEdit, FaSave, FaCheck,
+  FaStop, FaVolumeUp, FaVolumeMute, FaPlus, FaTrash, FaEdit, FaSave, FaCheck,
 } from "react-icons/fa";
-
-// ─── Section Header helper ───────────────────────────────────────────────────
-function SectionHeader({ title, subtitle }) {
-  return (
-    <div className="mb-8">
-      <h2 className="text-3xl font-extrabold text-gray-900">{title}</h2>
-      {subtitle && <p className="text-gray-500 text-sm mt-1">{subtitle}</p>}
-    </div>
-  );
-}
 
 // ─── Product mapping helpers ─────────────────────────────────────────────────
 
 // Map any DB/legacy category label → UI filter category
-const UI_CATEGORIES = [
-  "Smartphones",
-  "Laptops",
-  "Headphones",
-  "Smart Watches",
-  "Cameras",
-  "Tablets",
-  "Gaming Accessories",
-  "Home Appliances"
-];
+const UI_CATEGORIES = ["Mobiles", "Electronics", "Fashion", "Beauty"];
+const CATEGORY_ALIASES = {
+  Laptops: "Electronics",
+  "Men's Fashion": "Fashion",
+  "Women's Fashion": "Fashion",
+  Shoes: "Fashion",
+  Watches: "Electronics",
+  "Home Appliances": "Electronics",
+  General: "Electronics",
+  Tracked: "Electronics",
+};
 
 function normalizeCategory(cat) {
-  if (!cat) return "Other";
-  const lower = String(cat).toLowerCase().trim();
-  
-  if (/\b(phone|mobile|smartphone|iphone)\b/.test(lower)) return "Smartphones";
-  if (/\b(laptop|macbook|computer|pc|notebook)\b/.test(lower)) return "Laptops";
-  if (/\b(headphone|earphone|earbud|audio|speaker|airpod)\b/.test(lower)) return "Headphones";
-  if (/\b(watch|band|wearable|smartwatch)\b/.test(lower)) return "Smart Watches";
-  if (/\b(camera|lens|dslr|gopro)\b/.test(lower)) return "Cameras";
-  if (/\b(tablet|ipad|kindle)\b/.test(lower)) return "Tablets";
-  if (/\b(gaming|console|playstation|xbox|nintendo|controller)\b/.test(lower)) return "Gaming Accessories";
-  if (/\b(home|appliance|tv|television|ac|air conditioner|fridge|refrigerator|washing machine|microwave|oven|cooler|heater)\b/.test(lower)) return "Home Appliances";
-
-  // Fallback to exact case-insensitive match or original
-  const exactMatch = UI_CATEGORIES.find(c => c.toLowerCase() === lower);
-  return exactMatch || cat;
+  if (!cat) return "Electronics";
+  if (UI_CATEGORIES.includes(cat)) return cat;
+  return CATEGORY_ALIASES[cat] || cat;
 }
 
 function parseNumPrice(val) {
@@ -68,55 +47,35 @@ function formatRupee(num) {
 }
 
 function mapDbProduct(p) {
-  // Support both old schema (product_name/current_price/image_url) and real schema (name/price/image)
-  const currentPriceVal = p.current_price !== undefined ? p.current_price : p.price;
-  const originalPriceVal = p.original_price !== undefined ? p.original_price : p.oldPrice;
-  const productNameVal = p.product_name || p.name || "Unnamed Product";
-  // Real DB images are generic category shots, not product-specific.
-  // Prefer name-matched image, fall back to stored DB image.
-  const storedImage = p.image_url || p.image || p.primary_image || "";
-  const nameMatchedImage = getProductImageByName(productNameVal, p.category);
-  const imageVal = (nameMatchedImage && nameMatchedImage !== IMAGE_NOT_AVAILABLE)
-    ? nameMatchedImage
-    : storedImage;
-  const descVal = p.product_description || p.description || p.features || "";
-  // Real DB discount column is 'discount' (int), not 'discount_percentage'
-  const discountRaw = p.discount_percentage ?? p.discount;
-
-  const numPrice = parseNumPrice(currentPriceVal);
-  const numOrig = originalPriceVal != null
-    ? parseNumPrice(originalPriceVal)
-    : (discountRaw > 0 && numPrice > 0
-      ? Math.round(numPrice / (1 - Number(discountRaw) / 100))
+  const numPrice = parseNumPrice(p.price);
+  const numOrig = p.original_price != null
+    ? parseNumPrice(p.original_price)
+    : (p.discount > 0 && numPrice > 0
+      ? Math.round(numPrice / (1 - Number(p.discount) / 100))
       : (numPrice > 0 ? Math.round(numPrice * 1.2) : 0));
-  const disc = discountRaw != null
-    ? Number(discountRaw)
+  const disc = p.discount != null
+    ? Number(p.discount)
     : (numOrig > numPrice && numOrig > 0 ? Math.round(((numOrig - numPrice) / numOrig) * 100) : 0);
   const category = normalizeCategory(p.category);
-  // Real DB uses 'source', old uses 'source_website'
-  const platformVal = p.source_website || p.source || p.platform || "";
-  // Real DB uses 'product_url', old uses 'product_link'
-  const productUrlVal = p.product_url || p.product_link || "#";
-  
   const base = {
     id: `db-${p.id}`,
-    name: String(productNameVal).trim(),
+    name: (p.name && String(p.name).trim()) ? String(p.name).trim() : "Unnamed Product",
     brand: p.brand || "",
     price: numPrice > 0 ? formatRupee(numPrice) : "₹0",
     oldPrice: numOrig > numPrice ? formatRupee(numOrig) : "",
-    features: descVal,
-    image: imageVal,
-    primary_image: imageVal,
-    image_2: "",
-    image_3: "",
-    product_url: productUrlVal,
+    features: p.description || p.features || "",
+    image: p.primary_image || p.image || "",
+    primary_image: p.primary_image || p.image || "",
+    image_2: p.image_2 || "",
+    image_3: p.image_3 || "",
+    product_url: p.product_url || "#",
     category,
-    platform: platformVal,
+    platform: p.source || "",
     discount: disc,
     discountPercentage: disc > 0 ? `${disc}% OFF` : "",
     rating: p.rating != null ? Number(p.rating) : 4.0,
-    reviewCount: 0,
-    deliveryETA: "In Stock",
+    reviewCount: p.review_count ?? p.reviewCount ?? 0,
+    deliveryETA: p.delivery_eta || p.deliveryETA || "Get it in 2 days",
     isFromDb: true,
   };
   const imgs = resolveProductGallery(base);
@@ -134,15 +93,15 @@ function mapDbProduct(p) {
 }
 
 
-const hotDeals = [99, 199, 499, 999, 1999, 4999, 9999, 24999];
-const discounts  = [10, 20, 30, 40];
+const hotDeals   = [99, 199, 299, 399, 499, 599, 799, 999];
+const discounts  = [40, 50, 60, 70];
 const categories = [
-  { label: "Smartphones",         sub: "Starting from", price: "₹14,999", icon: "📱", accent: "#e11d48", filterCat: "Smartphones",     bg: "from-rose-50 to-pink-100" },
-  { label: "Laptops",             sub: "Starting from", price: "₹34,999", icon: "💻", accent: "#d97706", filterCat: "Laptops",         bg: "from-orange-50 to-amber-100" },
-  { label: "Headphones",          sub: "Starting from", price: "₹1,999",  icon: "🎧", accent: "#7c3aed", filterCat: "Headphones",      bg: "from-violet-50 to-purple-100" },
-  { label: "Smart Watches",       sub: "Starting from", price: "₹2,499",  icon: "⌚", accent: "#0d9488", filterCat: "Smart Watches",  bg: "from-cyan-50 to-teal-100" },
-  { label: "Cameras",             sub: "Starting from", price: "₹25,000", icon: "📷", accent: "#0284c7", filterCat: "Cameras",        bg: "from-sky-50 to-blue-100" },
-  { label: "Home Appliances",     sub: "Starting from", price: "₹2,999",  icon: "🔌", accent: "#059669", filterCat: "Home Appliances",bg: "from-emerald-50 to-green-100" },
+  { label: "Premium Smartphones", sub: "Starting from", price: "₹34,999", icon: "📱", accent: "#e11d48", filterCat: "Mobiles",     bg: "from-rose-50 to-pink-100" },
+  { label: "Mid-Range Smartphones", sub: "Under",       price: "₹14,999", icon: "📲", accent: "#0284c7", filterCat: "Mobiles",     bg: "from-sky-50 to-blue-100" },
+  { label: "Budget Laptops",        sub: "Under",       price: "₹34,999", icon: "💻", accent: "#d97706", filterCat: "Electronics", bg: "from-orange-50 to-amber-100" },
+  { label: "Fashion & Apparel",     sub: "Starting from", price: "₹999",  icon: "👕", accent: "#7c3aed", filterCat: "Fashion",     bg: "from-violet-50 to-purple-100" },
+  { label: "Beauty Products",       sub: "Starting from", price: "₹299",  icon: "✨", accent: "#059669", filterCat: "Beauty",      bg: "from-emerald-50 to-green-100" },
+  { label: "Smart Watches",         sub: "Under",       price: "₹4,999",  icon: "⌚", accent: "#0d9488", filterCat: "Electronics", bg: "from-cyan-50 to-teal-100" },
 ];
 
 // ─── AI Chat helpers ───────────────────────────────────────────────────────
@@ -169,21 +128,17 @@ function getAIResponse(message, products) {
       return `• ${p.name} – ${p.price} (${disc}% off)`;
     }).join("\n")}\n\nWant me to show you more? 🛍️`;
   }
-  if (msg.includes("phone") || msg.includes("mobile") || msg.includes("smartphone")) {
-    const mobiles = products.filter(p => p.category === "Smartphones").slice(0, 3);
-    return `📱 Top Smartphones available:\n\n${mobiles.map(p => `• ${p.name} – ${p.price}`).join("\n")}\n\nWant to filter by budget?`;
+  if (msg.includes("mobile") || msg.includes("phone") || msg.includes("smartphone")) {
+    const mobiles = products.filter(p => p.category === "Mobiles").slice(0, 3);
+    return `📱 Top Mobiles available:\n\n${mobiles.map(p => `• ${p.name} – ${p.price}`).join("\n")}\n\nWant to filter by budget?`;
   }
   if (msg.includes("laptop") || msg.includes("computer") || msg.includes("macbook")) {
-    const laptops = products.filter(p => p.category === "Laptops").slice(0, 3);
+    const laptops = products.filter(p => p.category === "Electronics" && p.name.toLowerCase().includes("laptop") || p.name.toLowerCase().includes("macbook")).slice(0, 3);
     return `💻 Top Laptops:\n\n${laptops.length ? laptops.map(p => `• ${p.name} – ${p.price}`).join("\n") : "No laptops found"}\n\nNeed help comparing specs?`;
   }
-  if (msg.includes("headphone") || msg.includes("earphone") || msg.includes("audio")) {
-    const headphones = products.filter(p => p.category === "Headphones").slice(0, 3);
-    return `🎧 Top Headphones:\n\n${headphones.length ? headphones.map(p => `• ${p.name} – ${p.price}`).join("\n") : "No headphones found"}\n\nLooking for noise cancelling?`;
-  }
-  if (msg.includes("watch") || msg.includes("smartwatch") || msg.includes("fitness")) {
-    const watches = products.filter(p => p.category === "Smart Watches").slice(0, 3);
-    return `⌚ Top Smart Watches:\n\n${watches.length ? watches.map(p => `• ${p.name} – ${p.price}`).join("\n") : "No smart watches found"}`;
+  if (msg.includes("fashion") || msg.includes("clothes") || msg.includes("shoes") || msg.includes("hoodie")) {
+    const fashion = products.filter(p => p.category === "Fashion").slice(0, 3);
+    return `👗 Trending Fashion picks:\n\n${fashion.map(p => `• ${p.name} – ${p.price}`).join("\n")}\n\nAnything specific you're looking for?`;
   }
   if (msg.includes("under") || msg.includes("below") || msg.includes("₹") || /\d{3,}/.test(msg)) {
     const match = msg.match(/\d{3,}/);
@@ -204,6 +159,18 @@ function getAIResponse(message, products) {
   if (msg.includes("compare")) {
     return "Sure! To compare products, just tell me which two items you'd like to compare. For example:\n\"Compare iPhone 15 and Samsung S24\"\n\nI'll show you specs, prices, and which is the better deal! 📊";
   }
+  if (msg.includes("iphone")) {
+    const iphone = products.find(p => p.name.toLowerCase().includes("iphone"));
+    return iphone
+      ? `🍎 iPhone 15 Details:\n\n• Price: ${iphone.price}\n• Was: ${iphone.oldPrice}\n• Features: ${iphone.features}\n\nGreat choice! Want me to add it to your cart?`
+      : "iPhone not found in current listings. Try searching directly!";
+  }
+  if (msg.includes("samsung")) {
+    const sam = products.find(p => p.name.toLowerCase().includes("samsung"));
+    return sam
+      ? `📱 Samsung S24 Details:\n\n• Price: ${sam.price}\n• Was: ${sam.oldPrice}\n• Features: ${sam.features}\n\nExcellent mid-range option! 🌟`
+      : "Samsung not found right now. Browse the Mobiles section!";
+  }
   if (msg.includes("thank")) {
     return "You're welcome! 😊 Happy shopping! Don't forget to check the Hot Deals section for the latest price drops! 🔥🛍️";
   }
@@ -212,7 +179,7 @@ function getAIResponse(message, products) {
   }
 
   // Default
-  const suggestions = ["best deals", "phones under ₹20000", "laptops", "headphones"];
+  const suggestions = ["best deals", "mobiles under ₹20000", "laptops", "fashion discounts"];
   const rand = suggestions[Math.floor(Math.random() * suggestions.length)];
   return `🤔 I'm not sure about that, but I can help you find great deals!\n\nTry asking me:\n• "${rand}"\n• "show cheapest products"\n• "what's on sale today?"\n\nWhat would you like to explore? 🛍️`;
 }
@@ -227,23 +194,19 @@ export default function Dashboard({ addToCart, cart }) {
   const [productsLoading,  setProductsLoading]  = useState(true);
   const [ingestStatus,     setIngestStatus]     = useState("idle"); // idle | syncing | error
   const [ingestMessage,    setIngestMessage]    = useState("");
-  const [supabaseError,    setSupabaseError]    = useState(null);
-  const [priceRangeFilter, setPriceRangeFilter] = useState("All");
-  const [placeholderText,  setPlaceholderText]  = useState("Search products, brands, categories...");
-  const [currentUser,      setCurrentUser]      = useState(() => JSON.parse(localStorage.getItem("currentUser")));
-  const [addressInput,     setAddressInput]     = useState(() => { const u = JSON.parse(localStorage.getItem("currentUser")); return u ? (u.address || "") : ""; });
-  const [phoneInput,       setPhoneInput]       = useState(() => { const u = JSON.parse(localStorage.getItem("currentUser")); return u ? (u.phone || "") : ""; });
+  const [currentUser,      setCurrentUser]      = useState(null);
+  const [addressInput,     setAddressInput]     = useState("");
+  const [phoneInput,       setPhoneInput]       = useState("");
+  const [appHostLink,      setAppHostLink]      = useState("");
   const [showNotifications,setShowNotifications]= useState(false);
   const [priceFilter,      setPriceFilter]      = useState(null);
   const [discountFilter,   setDiscountFilter]   = useState(null);
   const [mobileMenuOpen,   setMobileMenuOpen]   = useState(false);
   const [currentPage,      setCurrentPage]      = useState(1);
-  const [sortOrder,        setSortOrder]        = useState("");
   const ITEMS_PER_PAGE = 24;
 
   // Profile image
   const [profileImage,     setProfileImage]     = useState(null);
-
 
   // Camera / Image search
   const [cameraImage,      setCameraImage]      = useState(null);
@@ -277,30 +240,63 @@ export default function Dashboard({ addToCart, cart }) {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem("currentUser"));
     if (!user) { navigate("/"); return; }
+    setCurrentUser(user);
+    setAddressInput(user.address || "");
+    setPhoneInput(user.phone || "");
     setProfileImage(user.avatar || null);
+    setAppHostLink(localStorage.getItem("appHostLink") || window.location.origin);
     const saved = sessionStorage.getItem("activePage");
     if (saved) { setActivePage(saved); sessionStorage.removeItem("activePage"); }
   }, [navigate]);
 
+  useEffect(() => { fetchProducts(); }, []);
   useEffect(() => {
-    const placeholders = [
-      "Search products, brands, categories...",
-      "Search smartphones (iPhone, Samsung)...",
-      "Find laptops under ₹50,000...",
-      "Looking for noise-cancelling headphones?",
-      "Track prices for Apple Smart Watches...",
-      "Search cameras (Sony, Canon)..."
-    ];
-    let idx = 0;
-    const interval = setInterval(() => {
-      idx = (idx + 1) % placeholders.length;
-      setPlaceholderText(placeholders[idx]);
-    }, 3500);
-    return () => clearInterval(interval);
+    const iv = setInterval(fetchProducts, 30000);
+    return () => clearInterval(iv);
   }, []);
 
+  useEffect(() => {
+    const handler = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifications(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, showChat]);
+
+  useEffect(() => { setCurrentPage(1); }, [search, activeCategory, priceFilter, discountFilter]);
+
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  const startIngestion = useCallback(async () => {
+  async function fetchProducts() {
+    setProductsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .order("last_synced_at", { ascending: false, nullsFirst: false });
+
+      if (error) throw error;
+
+      const rows = data || [];
+      setProducts(rows);
+
+      if (rows.length > 0) {
+        setIngestStatus("idle");
+        checkAutomaticAlerts(rows.map(mapDbProduct));
+      } else if (ingestStatus !== "syncing") {
+        await startIngestion();
+      }
+    } catch (err) {
+      console.error("Failed to fetch products:", err.message);
+      setIngestMessage(err.message);
+      setIngestStatus("error");
+    } finally {
+      setProductsLoading(false);
+    }
+  }
+
+  async function startIngestion() {
     setIngestStatus("syncing");
     setIngestMessage("Fetching live prices from Amazon, Flipkart, Croma & Reliance Digital…");
     try {
@@ -312,7 +308,7 @@ export default function Dashboard({ addToCart, cart }) {
           .order("last_synced_at", { ascending: false })
           .limit(1);
         if (data?.length > 0) {
-          fetchProducts();
+          await fetchProducts();
           setIngestMessage("");
           return;
         }
@@ -325,48 +321,10 @@ export default function Dashboard({ addToCart, cart }) {
       };
       setTimeout(() => poll(0), 4000);
     } catch (err) {
-      setIngestStatus("idle");
-      setIngestMessage("");
-      console.warn("Backend ingestion API offline (this is OK if products exist in DB):", err.message);
+      setIngestStatus("error");
+      setIngestMessage(err.message || "Could not reach ingestion API. Start backend: uvicorn app:app --port 8000");
     }
-  }, []);
-
-  const fetchProducts = useCallback(async () => {
-    setProductsLoading(true);
-    setSupabaseError(null);
-    try {
-      let rows = [];
-      const { data, error } = await supabase
-        .from("products")
-        .select("*");
-
-      console.log("Supabase Fetch - Data:", data, "Error:", error);
-
-      if (error) {
-        console.error("Supabase fetch error:", error.message);
-        setSupabaseError(error.message);
-      } else {
-        rows = data || [];
-      }
-
-      if (rows.length > 0) {
-        setProducts(rows);
-        setIngestStatus("idle");
-        setIngestMessage("");
-        checkAutomaticAlerts(rows.map(mapDbProduct));
-      } else {
-        if (!error) {
-           setSupabaseError("RLS_BLOCKED");
-        }
-        console.warn("Supabase returned empty array ([]). If your table has data, this is likely an RLS (Row Level Security) issue.");
-      }
-    } catch (err) {
-      console.error("Failed to fetch products:", err.message);
-      setSupabaseError(err.message);
-    } finally {
-      setProductsLoading(false);
-    }
-  }, []);
+  }
 
   async function handleManualRefresh() {
     setIngestStatus("syncing");
@@ -565,9 +523,7 @@ export default function Dashboard({ addToCart, cart }) {
   };
 
   // ── Product helpers ───────────────────────────────────────────────────────
-  const deduplicatedProducts = products
-    .filter(p => p && p.id != null)
-    .map(mapDbProduct);
+  const deduplicatedProducts = products.filter(p => p && p.id != null).map(mapDbProduct);
 
   const getNumericPrice = (s) => parseNumPrice(s);
   const getDiscount = (p) => {
@@ -576,35 +532,6 @@ export default function Dashboard({ addToCart, cart }) {
     if (!old || !cur || old <= cur) return 0;
     return Math.round(((old - cur) / old) * 100);
   };
-
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
-  useEffect(() => {
-    const iv = setInterval(fetchProducts, 30000);
-    return () => clearInterval(iv);
-  }, [fetchProducts]);
-
-  useEffect(() => {
-    const handler = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifications(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  useEffect(() => {
-    if (products.length > 0) {
-      const rawCategories = [...new Set(products.map(p => p.category))].filter(Boolean);
-      const normalizedCategories = [...new Set(deduplicatedProducts.map(p => normalizeCategory(p.category)))];
-      console.log("=== SUPABASE CATEGORY DEBUG ===");
-      console.log("Raw Categories from Supabase:", rawCategories);
-      console.log("Normalized Categories for UI:", normalizedCategories);
-      console.log("===============================");
-    }
-  }, [products, deduplicatedProducts]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages, showChat]);
-
-  useEffect(() => { setCurrentPage(1); }, [search, activeCategory, priceFilter, discountFilter, sortOrder]);
 
   let displayedProducts = deduplicatedProducts;
   if (search) {
@@ -621,29 +548,19 @@ export default function Dashboard({ addToCart, cart }) {
   if (priceFilter)     displayedProducts = displayedProducts.filter(p => getNumericPrice(p.price) <= priceFilter);
   if (discountFilter)  displayedProducts = displayedProducts.filter(p => getDiscount(p) >= discountFilter);
 
-  // Apply Price Range Filter Chips
-  if (priceRangeFilter === "Under ₹10K") {
-    displayedProducts = displayedProducts.filter(p => getNumericPrice(p.price) <= 10000);
-  } else if (priceRangeFilter === "Under ₹25K") {
-    displayedProducts = displayedProducts.filter(p => getNumericPrice(p.price) <= 25000);
-  } else if (priceRangeFilter === "Under ₹50K") {
-    displayedProducts = displayedProducts.filter(p => getNumericPrice(p.price) <= 50000);
-  } else if (priceRangeFilter === "Under ₹1L") {
-    displayedProducts = displayedProducts.filter(p => getNumericPrice(p.price) <= 100000);
-  }
-
-  // Apply Price Sorting
-  if (sortOrder === "low-to-high") {
-    displayedProducts = [...displayedProducts].sort((a, b) => getNumericPrice(a.price) - getNumericPrice(b.price));
-  } else if (sortOrder === "high-to-low") {
-    displayedProducts = [...displayedProducts].sort((a, b) => getNumericPrice(b.price) - getNumericPrice(a.price));
-  }
-
   const totalPages = Math.ceil(displayedProducts.length / ITEMS_PER_PAGE);
   const paginatedProducts = displayedProducts.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   // ── Reusable sub-components ───────────────────────────────────────────────
-
+  const SectionHeader = ({ title, subtitle }) => (
+    <div className="text-center mb-8">
+      <h2 className="text-3xl font-extrabold text-gray-900">{title}</h2>
+      <div className="inline-flex items-center gap-1.5 mt-2 bg-amber-50 border border-amber-200 rounded-full px-4 py-1">
+        <span className="text-amber-500 text-xs">✦</span>
+        <span className="text-xs font-semibold text-amber-700">{subtitle}</span>
+      </div>
+    </div>
+  );
 
   const navLinks = [
     { label: "Home",     page: "home",     icon: FaHome  },
@@ -700,13 +617,6 @@ export default function Dashboard({ addToCart, cart }) {
                 {cart.length > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{cart.length}</span>
                 )}
-              </button>
-
-              {/* Compare Prices */}
-              <button onClick={() => navigate("/compare")}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-sm font-semibold transition cursor-pointer shadow-sm">
-                <FaTag />
-                <span className="hidden sm:inline">Compare</span>
               </button>
 
               {/* Notifications */}
@@ -801,7 +711,7 @@ export default function Dashboard({ addToCart, cart }) {
                 <FaSearch className="text-gray-400 ml-2 flex-shrink-0" />
                 <input
                   type="text"
-                  placeholder={placeholderText}
+                  placeholder="Search products, brands, categories..."
                   className="flex-1 outline-none text-gray-800 text-sm placeholder-gray-400 bg-transparent min-w-0"
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); if (e.target.value) setActivePage("products"); }}
@@ -854,7 +764,7 @@ export default function Dashboard({ addToCart, cart }) {
             <SectionHeader title="Hot Deals" subtitle="Powered by Smart Deal Scanner" />
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {hotDeals.map(price => (
-                <button key={price} onClick={() => { setPriceFilter(price); setDiscountFilter(null); setPriceRangeFilter("All"); setActivePage("products"); }}
+                <button key={price} onClick={() => { setPriceFilter(price); setDiscountFilter(null); setActivePage("products"); }}
                   className={`group relative overflow-hidden rounded-2xl p-6 text-left transition-all duration-300 hover:scale-105 hover:shadow-xl cursor-pointer border-2 ${priceFilter === price ? "border-blue-500 shadow-lg" : "border-transparent"}`}
                   style={{ background: "linear-gradient(135deg,#eef2ff 0%,#e0e7ff 100%)" }}>
                   <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ background: "linear-gradient(135deg,#dde4ff 0%,#c7d2fe 100%)" }} />
@@ -886,38 +796,25 @@ export default function Dashboard({ addToCart, cart }) {
             </div>
           </section>
 
-          {/* CATEGORIES - AMAZON STYLE */}
+          {/* CATEGORIES */}
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-16">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {UI_CATEGORIES.filter(cat => ["Smartphones", "Laptops", "Headphones", "Smart Watches", "Cameras", "Home Appliances"].includes(cat)).map(catName => {
-                const catProducts = deduplicatedProducts.filter(p => normalizeCategory(p.category) === catName);
-                if (catProducts.length === 0) return null; // Skip empty categories
-
-                const items = catProducts.slice(0, 4).map(p => ({
-                  img: p.image || p.primary_image,
-                  label: p.brand || (p.name ? p.name.split(" ")[0] : "Explore")
-                }));
-
-                return (
-                  <div key={catName} onClick={() => { setActiveCategory(catName); setPriceFilter(null); setDiscountFilter(null); setActivePage("products"); window.scrollTo({top: 0, behavior: 'smooth'}); }}
-                    className="bg-white rounded-md shadow-sm hover:shadow-md border border-gray-200 p-5 flex flex-col transition-shadow cursor-pointer">
-                    <h3 className="text-xl font-bold text-gray-900 mb-4">{catName}</h3>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-5 mb-5 flex-1">
-                      {items.map((item, idx) => (
-                        <div key={idx} className="flex flex-col items-start group">
-                          <div className="w-full aspect-square mb-2 bg-white overflow-hidden border border-gray-100 rounded-sm">
-                            <img src={item.img} alt={item.label} className="w-full h-full object-contain p-2 group-hover:opacity-90 transition-opacity" />
-                          </div>
-                          <span className="text-[12px] text-gray-900 line-clamp-1">{item.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <a className="text-[13px] font-medium text-[#007185] hover:text-[#c45500] hover:underline mt-auto" onClick={(e) => e.preventDefault()}>
-                      See more
-                    </a>
+            <SectionHeader title="Shop by Categories" subtitle="Powered by Smart Deal Scanner" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {categories.map(cat => (
+                <button key={cat.label} onClick={() => { setActiveCategory(cat.filterCat); setPriceFilter(null); setDiscountFilter(null); setActivePage("products"); }}
+                  className="group relative overflow-hidden rounded-2xl p-5 flex items-center justify-between transition-all duration-300 hover:scale-[1.02] hover:shadow-xl cursor-pointer border-2 border-transparent text-left"
+                  style={{ background: `linear-gradient(135deg, var(--tw-gradient-stops))` }}>
+                  <div className={`absolute inset-0 bg-gradient-to-br ${cat.bg} rounded-2xl`} />
+                  <div className="relative z-10">
+                    <p className="text-xs font-semibold text-gray-500 mb-1">{cat.sub}</p>
+                    <p className="text-2xl font-extrabold" style={{ color: cat.accent }}>{cat.price}</p>
+                    <p className="text-sm font-bold text-gray-700 mt-1">{cat.label}</p>
                   </div>
-                );
-              })}
+                  <div className="h-20 w-20 flex items-center justify-center text-4xl rounded-xl bg-white shadow-md flex-shrink-0 group-hover:scale-110 transition-transform duration-300 relative z-10">
+                    {cat.icon}
+                  </div>
+                </button>
+              ))}
             </div>
           </section>
 
@@ -974,10 +871,10 @@ export default function Dashboard({ addToCart, cart }) {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-3 mb-6">
             <div className="flex items-center bg-white border border-gray-200 rounded-xl px-4 py-2.5 gap-2 flex-1 min-w-[200px] shadow-sm">
               <FaSearch className="text-gray-400 flex-shrink-0" />
-              <input type="text" placeholder={placeholderText} className="outline-none text-sm text-gray-700 w-full bg-transparent"
+              <input type="text" placeholder="Search products..." className="outline-none text-sm text-gray-700 w-full bg-transparent"
                 value={search} onChange={(e) => setSearch(e.target.value)} />
               {/* Camera inline */}
               <label className="cursor-pointer p-1 hover:bg-gray-100 rounded-lg transition" title="Image search">
@@ -985,46 +882,23 @@ export default function Dashboard({ addToCart, cart }) {
                 <input type="file" accept="image/*" className="hidden" onChange={handleCameraImage} />
               </label>
             </div>
-
-            <div className="flex flex-wrap gap-2 items-center">
-              {["All", ...UI_CATEGORIES.filter(c => deduplicatedProducts.some(p => normalizeCategory(p.category) === c))].map(cat => (
+            <div className="flex flex-wrap gap-2">
+              {["All","Mobiles","Electronics","Fashion","Beauty"].map(cat => (
                 <button key={cat} onClick={() => { setActiveCategory(cat); setPriceFilter(null); setDiscountFilter(null); }}
                   className={`px-4 py-2 rounded-xl text-sm font-semibold transition cursor-pointer ${
                     activeCategory === cat && !priceFilter && !discountFilter ? "bg-blue-600 text-white shadow-md" : "bg-white border border-gray-200 text-gray-600 hover:bg-blue-50"
                   }`}>{cat}</button>
               ))}
-              {(priceFilter || discountFilter || priceRangeFilter !== "All") && (
-                <button onClick={() => { setPriceFilter(null); setDiscountFilter(null); setPriceRangeFilter("All"); setActiveCategory("All"); }}
+              {(priceFilter || discountFilter) && (
+                <button onClick={() => { setPriceFilter(null); setDiscountFilter(null); setActiveCategory("All"); }}
                   className="px-4 py-2 rounded-xl text-sm font-semibold bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 cursor-pointer">
-                  ✕ Clear All
+                  ✕ Clear
                 </button>
               )}
             </div>
-
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition cursor-pointer shadow-sm md:ml-auto"
-            >
-              <option value="">Sort by Price</option>
-              <option value="low-to-high">Price: Low to High</option>
-              <option value="high-to-low">Price: High to Low</option>
-            </select>
           </div>
 
-          {/* Deal Price Range Filter Chips */}
-          <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-1 flex-wrap">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2">Deals:</span>
-            {["All", "Under ₹10K", "Under ₹25K", "Under ₹50K", "Under ₹1L"].map(range => (
-              <button key={range} onClick={() => { setPriceRangeFilter(range); setPriceFilter(null); setDiscountFilter(null); }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                  priceRangeFilter === range ? "bg-emerald-600 text-white shadow-md" : "bg-white border border-gray-200 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
-                }`}>{range}</button>
-            ))}
-          </div>
-
-
-          <div className="mb-4">
+          <div className="mb-5">
             <h2 className="text-2xl font-extrabold text-gray-900">
               {priceFilter ? `Deals Under ₹${priceFilter}` : discountFilter ? `Min ${discountFilter}% Off` : activeCategory === "All" ? "All Products" : activeCategory}
             </h2>
@@ -1032,35 +906,10 @@ export default function Dashboard({ addToCart, cart }) {
           </div>
 
           {productsLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div key={i} className="bg-white rounded-2xl border border-gray-200 h-80 animate-pulse" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="bg-white rounded-2xl border border-gray-200 h-72 animate-pulse" />
               ))}
-            </div>
-          ) : supabaseError ? (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center max-w-2xl mx-auto mt-10 shadow-sm">
-               <div className="text-4xl mb-4">🚨</div>
-               <h3 className="text-xl font-extrabold text-red-700 mb-2">Supabase Fetch Error</h3>
-               {supabaseError === "RLS_BLOCKED" ? (
-                 <>
-                   <p className="text-red-600 mb-4 font-medium">Row Level Security (RLS) is blocking read access.</p>
-                   <div className="text-left bg-white p-4 rounded-xl border border-red-100 text-sm text-gray-700 space-y-2">
-                     <p>Your table exists and has records, but Supabase is returning 0 rows because public access is disabled.</p>
-                     <p className="font-bold">To fix this, run this SQL in your Supabase Dashboard:</p>
-                     <pre className="bg-gray-800 text-gray-100 p-3 rounded-lg overflow-x-auto text-xs font-mono">
-{`ALTER TABLE "public"."products" ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Enable read access for all users" ON "public"."products"
-AS PERMISSIVE FOR SELECT
-TO public
-USING (true);`}
-                     </pre>
-                     <p className="pt-2 text-xs text-gray-500">Go to <a href="https://supabase.com/dashboard/project/spzseaujdlugrmkkiqjv/sql/new" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">Supabase SQL Editor</a> to run this command, then refresh this page.</p>
-                   </div>
-                 </>
-               ) : (
-                 <p className="text-red-600 font-medium">{supabaseError}</p>
-               )}
             </div>
           ) : displayedProducts.length === 0 ? (
             <div className="text-center py-24">
@@ -1070,7 +919,7 @@ USING (true);`}
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {paginatedProducts.map(product => (
                   <ProductCard key={product.id} product={product} navigate={navigate} addToCart={addToCart} getDiscount={getDiscount} onEdit={handleEditOpen} />
                 ))}
@@ -1559,32 +1408,18 @@ USING (true);`}
 }
 
 // ─── Reusable Product Card ─────────────────────────────────────────────────
-function computeDealScore(priceNum, oldPriceNum) {
-  if (!oldPriceNum || oldPriceNum <= priceNum) {
-    return 50; // Neutral score
-  }
-  const discountPercent = ((oldPriceNum - priceNum) / oldPriceNum) * 100;
-  return Math.min(100, Math.max(0, Math.round(50 + discountPercent * 1.25)));
-}
-
 function ProductCard({ product, navigate, addToCart, getDiscount, onEdit }) {
   const discount = product.discount != null ? Number(product.discount) : getDiscount(product);
   const rating = product.rating != null ? Number(product.rating) : 4.0;
   const ratingStars = Math.round(Math.min(5, Math.max(0, rating)));
   const reviewCount = product.reviewCount ?? 0;
 
-  // Resolve image: prefer stored URL, fall back to name-based match
-  const imageUrl = product.image || product.primary_image
-    || getProductImageByName(product.name, product.category)
-    || IMAGE_NOT_AVAILABLE;
+  const imageUrl = product.image || product.primary_image || IMAGE_NOT_AVAILABLE;
   const [imgSrc, setImgSrc] = useState(imageUrl);
   const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => {
-    const resolved = product.image || product.primary_image
-      || getProductImageByName(product.name, product.category)
-      || IMAGE_NOT_AVAILABLE;
-    setImgSrc(resolved);
+    setImgSrc(product.image || product.primary_image || IMAGE_NOT_AVAILABLE);
     setImgFailed(false);
   }, [product.id, product.image, product.primary_image, product.name]);
 
@@ -1597,28 +1432,16 @@ function ProductCard({ product, navigate, addToCart, getDiscount, onEdit }) {
   const handleImgErr = () => {
     if (!imgFailed) {
       setImgFailed(true);
-      // Try name-based image before the generic placeholder
-      const nameFallback = getProductImageByName(product.name, product.category);
-      setImgSrc(nameFallback !== IMAGE_NOT_AVAILABLE ? nameFallback : IMAGE_NOT_AVAILABLE);
+      setImgSrc(IMAGE_NOT_AVAILABLE);
     }
   };
-
-  const priceNum = parseNumPrice(product.price);
-  const oldPriceNum = parseNumPrice(product.oldPrice) || priceNum;
-  const dealScore = computeDealScore(priceNum, oldPriceNum);
-
-  const cleanId = String(product.id).replace("db-", "");
-  const targetPriceVal = localStorage.getItem(`target_price_${cleanId}`) || product.target_price;
-  const targetPriceNum = Number(targetPriceVal) || 0;
-  const isBelowTarget = targetPriceNum > 0 && priceNum < targetPriceNum;
-  const belowTargetPct = isBelowTarget ? Math.round(((targetPriceNum - priceNum) / targetPriceNum) * 100) : 0;
 
   return (
     <div
       onClick={goToDetails}
       className="group bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden cursor-pointer hover:shadow-xl hover:border-blue-200 hover:-translate-y-0.5 transition-all duration-300 flex flex-col"
     >
-      <div className="relative bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0 border-b border-gray-100" style={{ height: "240px" }}>
+      <div className="relative bg-white flex items-center justify-center overflow-hidden flex-shrink-0 border-b border-gray-100" style={{ height: "180px" }}>
         <img
           src={imgSrc}
           alt={product.name}
@@ -1626,32 +1449,13 @@ function ProductCard({ product, navigate, addToCart, getDiscount, onEdit }) {
           decoding="async"
           referrerPolicy="no-referrer"
           onError={handleImgErr}
-          className="w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-500"
+          className="max-h-[88%] max-w-[88%] object-contain p-2 group-hover:scale-105 transition-transform duration-500"
         />
         {discount > 0 && (
           <span className="absolute top-2 left-2 bg-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-lg shadow">
             -{discount}% OFF
           </span>
         )}
-
-        {/* Deal Score Badge top-right */}
-        <div className={`absolute top-2 right-2 z-10 w-7 h-7 rounded-full flex items-center justify-center font-black text-[10px] text-white shadow-md border-2 border-white ${
-          dealScore >= 80 ? "bg-green-500" : dealScore >= 60 ? "bg-amber-500" : "bg-red-500"
-        }`} title={`Deal Score: ${dealScore}/100`}>
-          {dealScore}
-        </div>
-
-        {/* Better than average or below target price overlay */}
-        {isBelowTarget && belowTargetPct > 5 ? (
-          <span className="absolute top-10 left-2 bg-emerald-600 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-md shadow-md animate-pulse">
-            🔥 {belowTargetPct}% below target
-          </span>
-        ) : discount > 15 ? (
-          <span className="absolute top-10 left-2 bg-emerald-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-md shadow">
-            Better than avg
-          </span>
-        ) : null}
-
         {product.category && (
           <span className="absolute bottom-2 left-2 bg-gray-900/75 text-white text-[9px] font-semibold px-2 py-0.5 rounded-md">
             {product.category}
@@ -1664,7 +1468,7 @@ function ProductCard({ product, navigate, addToCart, getDiscount, onEdit }) {
         )}
         <button
           onClick={(e) => e.stopPropagation()}
-          className="absolute top-2 right-10 bg-white/90 text-gray-300 p-1.5 rounded-full opacity-0 group-hover:opacity-100 hover:text-rose-500 transition shadow"
+          className="absolute top-2 right-2 bg-white/90 text-gray-300 p-1.5 rounded-full opacity-0 group-hover:opacity-100 hover:text-rose-500 transition shadow"
         >
           <FaHeart className="text-xs" />
         </button>
@@ -1705,22 +1509,19 @@ function ProductCard({ product, navigate, addToCart, getDiscount, onEdit }) {
           <p className="text-[10px] text-emerald-600 font-medium mt-1">{product.deliveryETA}</p>
         )}
 
-        <div className="flex gap-2 mt-4">
+        <div className="flex gap-1.5 mt-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/product?id=${encodeURIComponent(product.id ?? "")}`, { state: product }); }}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded-xl transition cursor-pointer"
+          >
+            View Details
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); addToCart(product); }}
-            className="flex-1 bg-[#ffd814] hover:bg-[#f7ca00] text-gray-900 text-sm font-bold py-2.5 rounded-full transition cursor-pointer flex items-center justify-center shadow-sm"
+            className="flex-1 bg-amber-400 hover:bg-amber-500 text-gray-900 text-xs font-bold py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1"
           >
-            Add to Cart
+            <FaShoppingCart className="text-[9px]" /> Cart
           </button>
-          <a
-            href={product.product_url && product.product_url !== "#" ? product.product_url : `https://www.google.com/search?q=${encodeURIComponent(product.name)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="flex-1 bg-[#ffa41c] hover:bg-[#fa8900] text-gray-900 text-sm font-bold py-2.5 rounded-full transition cursor-pointer flex items-center justify-center shadow-sm"
-          >
-            Buy Now
-          </a>
         </div>
       </div>
     </div>
